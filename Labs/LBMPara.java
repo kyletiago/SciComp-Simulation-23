@@ -1,6 +1,5 @@
 
 import java.awt.*;
-import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 
 import javax.swing.*;
@@ -26,41 +25,39 @@ public class LBMPara extends Thread {
 	final static double W2 = 1.0 / 36;
 
 	final static int CELL_SIZE = 2;
-	final static int OUTPUT_FREQ = 50;
+	final static int OUTPUT_FREQ = 100;
 
 	static Display display = new Display();
 
 	static int[][] c = new int[Q][2]; // Lattice velocities
 	static double[] w = new double[Q]; // Lattice weights
 
-	static double[][][] u = new double[NX][NY][2];
+	static double[][][] u = new double [NX] [NY] [2];
 
-	static boolean[][] obstacle = new boolean[NX][NY];
+	static boolean[][] obstacle = new boolean [NX] [NY];
 
+	// Moved out of main() to be accessible to run()
 	static int[] vStates = new int[] { 0, -1, +1 };
 	static int[] noslip = new int[Q];
-
 	static int[] i1 = new int[3], i2 = new int[3], i3 = new int[3];
 	static int i1pos = 0, i2pos = 0, i3pos = 0;
-
 	static double[][] vel = new double[NY][2];
-
 	static double[][][] fin = new double[NX][NY][Q];
-
 	static double[][][] fout = new double[NX][NY][Q];
 	static double[][] rho = new double[NX][NY];
 	static double omega;
 
-	static void cylindricalOb(double x, double y, double r) {
-		double r2 = r * r;
-		for (int i = 0; i < NX; i++) {
-			for (int j = 0; j < NY; j++) {
-				double dx = i - x;
-				double dy = j - y;
-				if ((dx * dx + dy * dy) < r2) {
-					obstacle[i][j] = (dx * dx + dy * dy) < r2;
-				}
-			}
+	static long macroTime = 0;
+	static long collisionTime = 0;
+	static long streamingTime = 0;
+
+	static void synch() {
+		try {
+			barrier.await();
+		}
+		catch(Exception e){
+			e.printStackTrace();
+			System.exit(1);
 		}
 	}
 
@@ -68,17 +65,12 @@ public class LBMPara extends Thread {
 		int P = 4;
 		barrier = new CyclicBarrier(P);
 		double cx = NX / 4.0, cy = NY / 2.0, r = 20;
-//		double cx2 = NX / 2.0, cy2 = NY/2, r2 = 40;
 		// Coordinates and size of obstacle.
 
 		double nulb = uLB * r / Re;
 		omega = 1.0 / (3 * nulb + 0.5); // Relaxation parameter
 
 		long startTime = System.currentTimeMillis();
-
-		long macroTime = 0;
-		long collisionTime = 0;
-		long streamingTime = 0;
 
 		// Define table c of velocity states
 
@@ -124,12 +116,18 @@ public class LBMPara extends Thread {
 		}
 
 		// Cylindrical obstacle
-
-		cylindricalOb(cx, cy, r);
-//		cylindricalOb(cx2, cy2, r2);
+		double r2 = r * r;
+		for (int i = 0; i < NX; i++) {
+			for (int j = 0; j < NY; j++) {
+				double dx = i - cx;
+				double dy = j - cy;
+				if ((dx * dx + dy * dy) < r2) {
+					obstacle[i][j] = (dx * dx + dy * dy) < r2;
+				}
+			}
+		}
 
 		// Inlet velocity with perturbation
-
 		for (int j = 0; j < NY; j++) {
 			vel[j][0] = uLB * (1 + 1E-4 * Math.sin(2 * Math.PI * j / (NY - 1)));
 		}
@@ -144,8 +142,7 @@ public class LBMPara extends Thread {
 			}
 		}
 
-		// START JOIN THREADS
-		
+		// Join threads
 		LBMPara[] openThreads = new LBMPara[P];
 		for (int threadNum = 0; threadNum < P; threadNum++) {
 			LBMPara thread = new LBMPara(threadNum, P);
@@ -160,21 +157,11 @@ public class LBMPara extends Thread {
 
 		System.out.println("Calculation completed in " + (endTime - startTime) + " milliseconds");
 
-		System.out.println("Time to calculate macroscopic quantities: " + macroTime + " milliseconds");
-		System.out.println("Time for collision steps: " + collisionTime + " milliseconds");
-		System.out.println("Time for streaming steps: " + streamingTime + " milliseconds");
+		System.out.println("Time to calculate macroscopic quantities: " + (macroTime/P) + " milliseconds");
+		System.out.println("Time for collision steps: " + (collisionTime/P) + " milliseconds");
+		System.out.println("Time for streaming steps: " + (streamingTime/P) + " milliseconds");
 
 		display.repaint();
-	}
-
-	public static void await() {
-		try {
-			barrier.await();
-		} catch (InterruptedException ex) {
-			return;
-		} catch (BrokenBarrierException ex) {
-			return;
-		}
 	}
 
 	int me;
@@ -205,23 +192,13 @@ public class LBMPara extends Thread {
 //							sum0 += c[d][0] * fin_ij[d];
 //							sum1 += c[d][1] * fin_ij[d];
 //						}
+						// Unrolled version of above loop over d
 
 						double sum = fin_ij[0] + fin_ij[1] + fin_ij[2] + fin_ij[3] + fin_ij[4] + fin_ij[5] + fin_ij[6]
 								+ fin_ij[7] + fin_ij[8];
 						double sum0 = -fin_ij[3] - fin_ij[4] - fin_ij[5] + fin_ij[6] + fin_ij[7] + fin_ij[8];
 						double sum1 = -fin_ij[1] + fin_ij[2] - fin_ij[4] + fin_ij[5] - fin_ij[7] + fin_ij[8];
-						/*
-						 * // UNROLLED version of above loop over d double sum = fin_ij [0] + fin_ij [1]
-						 * + fin_ij [2] + fin_ij [3] + fin_ij [4] + fin_ij [5] + fin_ij [6] + fin_ij [7]
-						 * + fin_ij [8] ;
-						 * 
-						 * double sum0 = - fin_ij [3] - fin_ij [4] - fin_ij [5] + fin_ij [6] + fin_ij
-						 * [7] + fin_ij [8] ;
-						 * 
-						 * double sum1 = - fin_ij [1] + fin_ij [2] - fin_ij [4] + fin_ij [5] - fin_ij
-						 * [7] + fin_ij [8] ;
-						 */
-
+						
 						rho[i][j] = sum;
 						if (sum > 0) {
 							u_ij[0] = sum0 / sum;
@@ -246,11 +223,11 @@ public class LBMPara extends Thread {
 				}
 			}
 
-//			await();
+			synch();
 
 			long time2 = System.currentTimeMillis();
 
-//			macroTime += (time2 - time1);
+			macroTime += (time2 - time1);
 
 			// Collision step.
 			for (int i = begin; i < end; i++) {
@@ -273,6 +250,7 @@ public class LBMPara extends Thread {
 								fin_ij[i3[p]] = feq[i3[p]];
 							}
 						}
+
 //						for (int d = 0; d < Q; d++) {
 //							fout_ij[d] = fin_ij[d] - omega * (fin_ij[d] - feq[d]);
 //						}
@@ -294,9 +272,9 @@ public class LBMPara extends Thread {
 
 			long time3 = System.currentTimeMillis();
 
-			await();
+			synch();
 
-//			collisionTime += (time3 - time2);
+			collisionTime += (time3 - time2);
 
 			// Streaming step.
 			for (int i = begin; i < end; i++) {
@@ -333,7 +311,8 @@ public class LBMPara extends Thread {
 				}
 			}
 
-//			await();
+			synch();
+
 			if (me == 0) {
 				// BC - Right wall: outflow condition
 				for (int d : i1) {
@@ -343,11 +322,11 @@ public class LBMPara extends Thread {
 				}
 			}
 
-			await();
+			// synch();
 
 			long time4 = System.currentTimeMillis();
 
-//			streamingTime += (time4 - time3);
+			streamingTime += (time4 - time3);
 
 			if (time % OUTPUT_FREQ == 0 && me == 0) {
 				System.out.println("time = " + time + "/" + NITER);
