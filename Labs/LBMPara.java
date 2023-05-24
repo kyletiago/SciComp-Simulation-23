@@ -8,8 +8,8 @@ public class LBMPara extends Thread {
 
 	static CyclicBarrier barrier;
 
-//	final static int NITER = 30000;
-	final static int NITER = 5000;
+	final static int NITER = 30000;
+	// final static int NITER = 5000;
 
 	final static int NX = 520, NY = 180; // Lattice dimensions
 	final static int Q = 9; // num states
@@ -64,6 +64,7 @@ public class LBMPara extends Thread {
 	public static void main(String args[]) throws Exception {
 		int P = 4;
 		barrier = new CyclicBarrier(P);
+
 		double cx = NX / 4.0, cy = NY / 2.0, r = 20;
 		// Coordinates and size of obstacle.
 
@@ -143,14 +144,14 @@ public class LBMPara extends Thread {
 		}
 
 		// Join threads
-		LBMPara[] openThreads = new LBMPara[P];
-		for (int threadNum = 0; threadNum < P; threadNum++) {
-			LBMPara thread = new LBMPara(threadNum, P);
-			openThreads[threadNum] = thread;
+		LBMPara[] threads = new LBMPara[P];
+		for (int tNum = 0; tNum < P; tNum++) {
+			LBMPara thread = new LBMPara(tNum, P);
+			threads[tNum] = thread;
 			thread.start();
 		}
-		for (int threadNum = 0; threadNum < openThreads.length; threadNum++) {
-			openThreads[threadNum].join();
+		for (int tNum = 0; tNum < threads.length; tNum++) {
+			threads[tNum].join();
 		}
 
 		long endTime = System.currentTimeMillis();
